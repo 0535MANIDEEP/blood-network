@@ -12,7 +12,7 @@
  *   is not mistaken for A.
  *   Rh. A positive donor carries the D antigen, so may only give to a positive
  *   recipient. A negative donor may give to either, which is why O negative is the
- *   universal donor.
+ *   universal RED CELL donor.
  *
  * The direction that must never be violated is positive into negative.
  */
@@ -58,9 +58,86 @@ export function canDonate(donorGroup, recipientGroup) {
   return !(donorPositive && !recipientPositive);
 }
 
-/** Every donor group that may give to this recipient group. */
+/** Red cell shorthand, so call sites say which component they mean. */
+export const canDonateRedCells = canDonate;
+
+/** Every donor group that may give red cells to this recipient group. */
 export function donorGroupsFor(recipientGroup) {
-  return BLOOD_GROUPS.filter((candidate) => canDonate(candidate, recipientGroup));
+  return BLOOD_GROUPS.filter((candidate) => canDonateRedCells(candidate, recipientGroup));
+}
+
+/**
+ * Plasma compatibility, which is NOT the same rule.
+ *
+ * Plasma carries antibodies, not red cells, so the logic inverts. A group AB donor
+ * has neither anti-A nor anti-B, which makes AB negative the universal PLASMA donor.
+ * Group O plasma contains both anti-A and anti-B, so it is the most restricted and
+ * can only go to group O recipients.
+ *
+ * This is the single most commonly confused point in donor matching, and getting it
+ * backwards in code would send AB plasma to an O patient and kill them. So the two
+ * functions are named separately and never aliased.
+ *
+ * Rh is not clinically significant for plasma, because the product contains no red
+ * cells for the recipient to react to. It is deliberately not checked.
+ */
+export function canDonatePlasma(donorGroup, recipientGroup) {
+  const donor = antigenOf(normaliseGroup(donorGroup));
+  const recipient = antigenOf(normaliseGroup(recipientGroup));
+
+  if (!GROUP_SET.has(normaliseGroup(donorGroup)) || !GROUP_SET.has(normaliseGroup(recipientGroup))) {
+    return false;
+  }
+
+  // AB plasma has no anti-A and no anti-B, so it suits everyone.
+  if (donor === 'AB') return true;
+  // O plasma has both antibodies, so it only suits group O.
+  if (donor === 'O') return recipient === 'O';
+  // A plasma has anti-B, so it suits A and O. B plasma mirrors that.
+  if (donor === 'A') return recipient === 'A' || recipient === 'O';
+  if (donor === 'B') return recipient === 'B' || recipient === 'O';
+  return false;
+}
+
+export function plasmaDonorGroupsFor(recipientGroup) {
+  return BLOOD_GROUPS.filter((candidate) => canDonatePlasma(candidate, recipientGroup));
+}
+
+/**
+ * Alloimmunisation preference for a female of childbearing age.
+ *
+ * An Rh negative woman who receives Rh positive red cells can develop anti-D, which
+ * complicates future pregnancy and transfusion. So for a female of childbearing age
+ * with an Rh negative requirement, an Rh negative donor is preferred, and the exact
+ * group is preferred over a universal donor even when the universal donor is closer.
+ *
+ * This is a preference for a clinician to weigh, never an automatic block: sometimes
+ * the only blood available is the mismatched unit, and that is still better than none.
+ * It is surfaced as a flag so the reviewer decides.
+ */
+export function donorPreferenceFlags({ donor, recipient, recipientSex, recipientAgeYears }) {
+  const flags = [];
+  const d = normaliseGroup(donor);
+  const r = normaliseGroup(recipient);
+
+  const isChildBearingAge =
+    recipientSex === 'female' && typeof recipientAgeYears === 'number' && recipientAgeYears < 50;
+
+  if (isChildBearingAge && r.endsWith('-') && d.endsWith('+')) {
+    flags.push({
+      code: 'alloimmunisation_risk',
+      detail: 'Rh positive red cells to an Rh negative woman of childbearing age. Prefer Rh negative.',
+    });
+  }
+
+  if (d !== r) {
+    flags.push({
+      code: 'not_same_group',
+      detail: `${d} donor to ${r} recipient. Compatible, but not the same group.`,
+    });
+  }
+
+  return flags;
 }
 
 /** Prefer the closest exact match, then universal donors, then further out. */
