@@ -80,7 +80,6 @@ export function createApp({ db, options = {}, logger = console } = {}) {
     expiry,
     idleMinutes,
     publicRateLimit = { limit: 30, windowMs: 60_000 },
-    notifier,
   } = options;
 
   const app = express();
@@ -152,7 +151,7 @@ export function createApp({ db, options = {}, logger = console } = {}) {
 
   app.use('/api/donor', donorRoutes({ db }));
   app.use('/api/bank', bankRoutes({ db }));
-  app.use('/api/coordinator', coordinatorRoutes({ db, notifier }));
+  app.use('/api/coordinator', coordinatorRoutes({ db }));
 
   app.use(notFoundHandler);
   app.use(errorHandler(logger));

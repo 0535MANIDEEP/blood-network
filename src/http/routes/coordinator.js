@@ -15,7 +15,7 @@ import { notFound, badRequest } from '../errors.js';
  * bank licence, deciding to widen a notification tier, telling a donor their
  * offer did not go through. Every one of those has a person in it on purpose.
  */
-export function coordinatorRoutes({ db, notifier } = {}) {
+export function coordinatorRoutes({ db } = {}) {
   const router = Router();
 
   router.use(requireAuth, requireRole('coordinator'));
