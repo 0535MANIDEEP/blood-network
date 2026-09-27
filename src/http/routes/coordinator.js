@@ -113,11 +113,18 @@ export function coordinatorRoutes({ db, notifier } = {}) {
         requestId: request[0].id,
         summary: plan.summary,
         banksCanCover: plan.banksCanCover,
+        // The planner returns a flat candidate, not a nested bank object.
         institutional: plan.parallel.institutional.map((c) => ({
-          bankId: c.bank.id,
-          bankName: c.bank.name,
+          bankId: c.bankId,
+          bankName: c.bankName,
+          // Which group the bank will actually give, which is not always the
+          // group the recipient needs. O positive can serve many recipients but
+          // never an O negative one, so a coordinator reading only the requested
+          // group would be misled about what is on the shelf.
+          group: c.group,
           distanceKm: c.distanceKm === null ? null : Number(c.distanceKm.toFixed(1)),
-          unitsAvailable: c.usableUnits,
+          unitsAvailable: c.availableUnits,
+          totalUsableUnits: c.totalUsableUnits,
         })),
         community: {
           tiers: plan.parallel.community.tiers.map((t) => ({
