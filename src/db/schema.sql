@@ -128,3 +128,80 @@ CREATE TABLE IF NOT EXISTS notifications (
                   CHECK (status IN ('queued','sent','failed','skipped_no_consent')),
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Accounts.
+--
+-- The phone number is the identity, not an email address. In the intended
+-- deployment almost every adult has one, whereas a meaningful fraction have no
+-- email, and an account system that quietly requires the thing a chunk of
+-- people lack will just exclude them.
+CREATE TABLE IF NOT EXISTS users (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  phone         TEXT        NOT NULL UNIQUE,
+  password_hash TEXT        NOT NULL,
+  role          TEXT        NOT NULL CHECK (role IN ('donor','bank','coordinator')),
+  display_name  TEXT        NOT NULL,
+
+  -- What this account is allowed to act as. The constraint below is the point:
+  -- a bank login physically cannot be attached to a donor record, so a
+  -- compromised bank account cannot act as a person. Without it, one nullable
+  -- column and one wrong query is a complete account takeover of a different
+  -- kind.
+  donor_id      UUID REFERENCES donors (id) ON DELETE SET NULL,
+  bank_id       UUID REFERENCES banks (id) ON DELETE SET NULL,
+
+  -- Set when a donor or bank record is deleted, so the account is disabled
+  -- rather than left active with nothing to act as.
+  disabled_at   TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+  CONSTRAINT users_subject_matches_role CHECK (
+    (role = 'donor'      AND donor_id IS NOT NULL AND bank_id IS NULL) OR
+    (role = 'bank'       AND bank_id  IS NOT NULL AND donor_id IS NULL) OR
+    (role = 'coordinator' AND donor_id IS NULL     AND bank_id  IS NULL)
+  )
+);
+
+CREATE INDEX IF NOT EXISTS users_role_idx ON users (role) WHERE disabled_at IS NULL;
+
+-- Sessions.
+--
+-- token_hash is the only copy. The plaintext token exists in the user's cookie
+-- and nowhere else, so reading this table does not hand an attacker working
+-- sessions.
+--
+-- The two expiries are separate columns rather than one computed value, so a
+-- revoked session is distinguishable from an expired one and so the idle
+-- window can slide without ever extending the absolute cap.
+CREATE TABLE IF NOT EXISTS sessions (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id            UUID        NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  token_hash         TEXT        NOT NULL UNIQUE,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  idle_expires_at    TIMESTAMPTZ NOT NULL,
+  absolute_expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at         TIMESTAMPTZ,
+  user_agent         TEXT,
+  source_address     TEXT
+);
+
+CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions (user_id) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions (absolute_expires_at) WHERE revoked_at IS NULL;
+
+-- Password reset.
+--
+-- One row per request, token hashed like a session token, single use. The
+-- newest unused row for an account is the only one that validates, so requesting
+-- a reset twice invalidates the first link rather than leaving two live ones.
+CREATE TABLE IF NOT EXISTS password_resets (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID        NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  token_hash  TEXT        NOT NULL UNIQUE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at  TIMESTAMPTZ NOT NULL,
+  used_at     TIMESTAMPTZ,
+  source_address TEXT
+);
+
+CREATE INDEX IF NOT EXISTS resets_user_idx ON password_resets (user_id) WHERE used_at IS NULL;

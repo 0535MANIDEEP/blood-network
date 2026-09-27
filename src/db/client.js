@@ -95,7 +95,8 @@ export async function migrate(db) {
 /** Clears every table. Test only. */
 export async function reset(db) {
   await db.exec(`
-    TRUNCATE notifications, consents, reservations, request_replies, requests,
-             inventory, donors, banks RESTART IDENTITY CASCADE
+    TRUNCATE password_resets, sessions, users, notifications, consents, reservations,
+             request_replies, requests, inventory, donors, banks
+    RESTART IDENTITY CASCADE
   `);
 }
