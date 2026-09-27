@@ -86,10 +86,16 @@ CREATE INDEX IF NOT EXISTS replies_request_idx ON request_replies (request_id, c
 
 -- A reservation holds stock for a bank for a limited time. Without the expiry a bank
 -- could sit on the last unit forever and nobody else could use it.
+--
+-- blood_group is recorded on the reservation rather than joined in from inventory.
+-- When a reservation lapses the units have to go back to the exact group row they
+-- came from, and a join could be ambiguous if a bank's stock had been edited.
 CREATE TABLE IF NOT EXISTS reservations (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   request_id    UUID        NOT NULL REFERENCES requests (id) ON DELETE CASCADE,
   bank_id       UUID        NOT NULL REFERENCES banks (id) ON DELETE CASCADE,
+  blood_group   TEXT        NOT NULL CHECK (blood_group IN
+                  ('A+','A-','B+','B-','AB+','AB-','O+','O-')),
   units         INTEGER     NOT NULL CHECK (units > 0),
   expires_at    TIMESTAMPTZ NOT NULL,
   released      BOOLEAN     NOT NULL DEFAULT false,
@@ -97,7 +103,7 @@ CREATE TABLE IF NOT EXISTS reservations (
 );
 
 CREATE INDEX IF NOT EXISTS reservations_active_idx
-  ON reservations (bank_id, expires_at) WHERE released = false;
+  ON reservations (bank_id, blood_group, expires_at) WHERE released = false;
 
 -- Consent is a separate, revocable record. Never a boolean on the user row.
 CREATE TABLE IF NOT EXISTS consents (
