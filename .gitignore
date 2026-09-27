@@ -1,9 +1,14 @@
 node_modules/
+
+# Local PGlite database directory. This is a database, not source. Committing it
+# bloats the repository, produces merge conflicts on every schema change, and is
+# how a local file ends up containing something it should not.
+.pgdata/
+
 .env
 .env.local
+
 *.log
 npm-debug.log*
-coverage/
-test-out.txt
-dist/
-build/
+.DS_Store
+Thumbs.db
