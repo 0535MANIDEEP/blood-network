@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Test
+        # The exit code is the gate. 328 tests run against a real PostgreSQL
+        # engine in process, so there is no service container and nothing to
+        # provision before this can pass.
+        run: npm test
+
+      - name: Confirm the database is not tracked
+        # .pgdata is a database, not source. It was committed by accident once
+        # already, and the fix is only worth anything if it cannot recur.
+        run: |
+          if git ls-files --error-unmatch .pgdata >/dev/null 2>&1; then
+            echo "::error::.pgdata is tracked in git. Run: git rm -r --cached .pgdata"
+            exit 1
+          fi
+          echo "ok, .pgdata is not tracked"
+
+      - name: Confirm no secrets are tracked
+        # Catches a committed key or token. The password hits in this project are
+        # function names and deliberate test fixtures, so the pattern is
+        # deliberately narrow rather than matching the word password.
+        run: |
+          if git grep -nIE '(BEGIN [A-Z ]*PRIVATE KEY|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,})' -- . ; then
+            echo "::error::A credential shaped string is tracked in git."
+            exit 1
+          fi
+          echo "ok, no credential shaped strings"
+
+      - name: Confirm the regulatory policy is still marked unreviewed
+        # The policy is unreviewed and that blocks any real deployment. A commit
+        # that quietly flips reviewed to true would be the single most dangerous
+        # change anyone could make to this repository, so CI refuses it until a
+        # reviewer is recorded alongside it.
+        run: |
+          reviewed=$(grep -oP 'reviewed:\s*\K(true|false)' src/policy/regulatory.js | head -1)
+          echo "regulatory policy reviewed: $reviewed"
+          if [ "$reviewed" = "true" ]; then
+            echo "::error::reviewed = true requires a named transfusion medicine specialist or lawyer reviewer recorded in this file, and a PR that says who."
+            exit 1
+          fi
+
+      - name: Confirm every library module still imports
+        # Catches a syntax error or a bad import in a file the tests do not
+        # happen to reach, which is otherwise invisible until someone runs it.
+        #
+        # The three script entry points are excluded because importing them RUNS
+        # them. src/index.js calls app.listen at the top level, so importing it on
+        # a runner with a free port starts a server and hangs the job until the
+        # timeout kills it. They are scripts, not libraries.
+        run: |
+          failed=0
+          for f in $(find src -name '*.js' \
+            ! -path 'src/index.js' \
+            ! -path 'src/db/migrate.js' \
+            ! -path 'src/db/seed.js' | sort); do
+            if ! node --input-type=module -e "await import('./$f')" >/dev/null 2>&1; then
+              echo "::error::$f does not import cleanly"
+              node --input-type=module -e "await import('./$f')" || true
+              failed=1
+            fi
+          done
+          if [ "$failed" -eq 0 ]; then echo "ok, every library module imports"; fi
+          exit $failed
