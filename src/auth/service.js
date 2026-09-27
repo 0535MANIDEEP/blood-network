@@ -70,6 +70,8 @@ export async function registerAccount(db, input, options = {}) {
     bloodGroup,
     city = '',
     state = '',
+    lat,
+    lon,
     bankName,
     throttle = loginThrottle,
     source,
@@ -130,8 +132,8 @@ export async function registerAccount(db, input, options = {}) {
       // verified_at is deliberately omitted. Supplying blood is a licensed act
       // and this signup is not evidence of a licence.
       const bank = await tx.query(
-        `INSERT INTO banks (name, phone, city, state) VALUES ($1, $2, $3, $4) RETURNING id`,
-        [bankName.trim(), phone, city, state],
+        `INSERT INTO banks (name, phone, city, state, lat, lon) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        [bankName.trim(), phone, city, state, lat ?? null, lon ?? null],
       );
       bankId = bank[0].id;
     }

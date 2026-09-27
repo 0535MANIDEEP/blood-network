@@ -186,6 +186,25 @@ describe('role and ownership are separate checks', () => {
     assert.equal(can(bank, 'inventory:write:own', { bankId: 'b1' }), true);
   });
 
+  test('the public user shape authorises the same as the raw row shape', () => {
+    // Routes authorise against req.user, which is the public shape carrying
+    // subjectId, not the database row carrying bank_id. Supporting only the row
+    // shape fails closed rather than open, which is the safe direction but still
+    // a bug: the bank cannot pass its own ownership check, cannot read its own
+    // stock, and the 403 reads like a permissions problem rather than a mismatch.
+    const asPublicUser = { id: 'u2', role: 'bank', displayName: 'Kiran', subjectId: 'b1' };
+
+    assert.equal(can(asPublicUser, 'inventory:read:own', { bankId: 'b1' }), true);
+    assert.equal(can(asPublicUser, 'inventory:read:own', { bankId: 'b2' }), false);
+    assert.equal(assertCan(asPublicUser, 'inventory:write:own', { bankId: 'b1' }), true);
+  });
+
+  test('a public donor shape resolves its own record too', () => {
+    const asPublicUser = { id: 'u1', role: 'donor', displayName: 'Asha', subjectId: 'd1' };
+    assert.equal(can(asPublicUser, 'donor:availability:own', { donorId: 'd1' }), true);
+    assert.equal(can(asPublicUser, 'donor:availability:own', { donorId: 'd2' }), false);
+  });
+
   test('a bank may not write another banks inventory', () => {
     // This is the check that a role table on its own cannot express. Every bank
     // user has the same role, so "banks may edit inventory" is true and useless.

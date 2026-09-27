@@ -12,6 +12,11 @@ CREATE TABLE IF NOT EXISTS banks (
   -- Licence issued by the State Drug Controller. Recorded, not verified by us.
   licence_ref   TEXT,
   phone         TEXT,
+  -- A bank's location is what makes "nearest bank with stock" mean anything.
+  -- Without it the fulfilment planner has nothing to sort by and every bank
+  -- ranks as equally distant, which silently turns proximity matching off.
+  lat           DOUBLE PRECISION,
+  lon           DOUBLE PRECISION,
   verified_at   TIMESTAMPTZ,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -30,6 +35,16 @@ CREATE TABLE IF NOT EXISTS donors (
   lat           DOUBLE PRECISION,
   lon           DOUBLE PRECISION,
   available     BOOLEAN     NOT NULL DEFAULT false,
+  -- Recorded by the blood bank at the point of collection, never self declared.
+  -- Sex and first time status are all the donation INTERVAL needs, and the
+  -- interval is the only thing this project checks on its own. The full clinical
+  -- screen, which needs haemoglobin, weight, pulse and blood pressure, is done
+  -- in person at a licensed collection centre and is deliberately not modelled
+  -- here, because a self service form asking a donor to certify their own blood
+  -- results is not a screening programme.
+  sex           TEXT        CHECK (sex IN ('male','female')),
+  is_first_donation BOOLEAN  NOT NULL DEFAULT true,
+  previous_donor_sex TEXT    CHECK (previous_donor_sex IN ('male','female')),
   -- NBTC deferral windows. Enforced in the API so a donor cannot re-register early.
   last_donated  DATE,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()

@@ -92,9 +92,25 @@ export function roleHas(role, permission) {
   return permissionsFor(role).includes(permission);
 }
 
-/** The record an account acts for, derived from its role. */
+/**
+ * The record a user acts for, derived from their role.
+ *
+ * Accepts both shapes deliberately. A raw database row carries bank_id or
+ * donor_id; the authenticated principal that travels with a request carries
+ * subjectId, because that is the only field toPublicUser exposes. Both are
+ * server derived, so honouring either does not widen who a caller may act as.
+ *
+ * Supporting only the row shape is a bug that fails closed rather than open,
+ * which is the safe direction but still a bug: a bank that cannot pass its own
+ * ownership check cannot read its own stock, and the symptom is a 403 that reads
+ * like a permissions problem rather than a shape mismatch.
+ */
 export function subjectIdFor(user) {
   if (!user) return null;
+
+  if (user.subjectId !== undefined && user.subjectId !== null) {
+    return user.subjectId;
+  }
   if (user.role === 'donor') return user.donor_id ?? null;
   if (user.role === 'bank') return user.bank_id ?? null;
   return null;
